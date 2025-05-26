@@ -25,7 +25,6 @@ import {
   BriefcaseMedical,
 } from "lucide-react";
 import TabButton from "../components/TabButton";
-import { BASE_URL } from "@/constants/api_constants";
 
 const Administrador = () => {
   const [activeTab, setActiveTab] = useState("usuarios");
@@ -38,6 +37,17 @@ const Administrador = () => {
   const [users, setUsers] = useState([]);
   // estado para quirofanos
   const [quirofanos, setQuirofanos] = useState([]);
+  // Estado para roles
+  const [roles, setRoles] = useState([]);
+  // Estado para estadísticas
+  const [statistics, setStatistics] = useState({
+    cirugias_dia: 0,
+    cirugias_en_curso: 0,
+    incidentes_mes: 0,
+    promedio_cirugias_dia: 0,
+    quirofanos_activos: 0,
+    usuarios_por_rol: []
+  });
 
   const [newUser, setNewUser] = useState({
     nombre: "",
@@ -46,6 +56,7 @@ const Administrador = () => {
     cedula: "",
     telefono: "",
     rol_id: "",
+    password: "",
     activo: true,
     fecha_nacimiento: "",
     direccion: "",
@@ -83,6 +94,7 @@ const Administrador = () => {
       cedula: "",
       telefono: "",
       rol_id: "",
+      password: "",
       activo: true,
       fecha_nacimiento: "",
       direccion: "",
@@ -97,43 +109,37 @@ const Administrador = () => {
   const handleSaveUser = async () => {
     try {
       if (newUser.rol_id === 5) {
-        const userResponse = await fetch(`${BASE_URL}/api/v1/admin/users`, {
+        const userResponse = await fetch(`http://localhost:3000/api/v1/admin/users`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             ...newUser,
-            password: "password123",
           }),
         });
         const userResult = await userResponse.json();
 
         if (userResult.success) {
-          const patientResponse = await fetch(
-            `${BASE_URL}/api/v1/admin/patients`,
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                nombre: newUser.nombre,
-                apellido: newUser.apellido,
-                cedula: newUser.cedula,
-                telefono: newUser.telefono,
-                fecha_nacimiento: newUser.fecha_nacimiento || "",
-                direccion: newUser.direccion || "",
-                tipo_sangre: newUser.tipo_sangre || "",
-                alergias: newUser.alergias || "",
-                condiciones_medicas: newUser.condiciones_medicas || "",
-                contacto_emergencia_nombre:
-                  newUser.contacto_emergencia_nombre || "",
-                contacto_emergencia_telefono:
-                  newUser.contacto_emergencia_telefono || "",
-              }),
-            }
-          );
+          const patientResponse = await fetch(`http://localhost:3000/api/v1/admin/patients`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              nombre: newUser.nombre,
+              apellido: newUser.apellido,
+              cedula: newUser.cedula,
+              telefono: newUser.telefono,
+              fecha_nacimiento: newUser.fecha_nacimiento || "",
+              direccion: newUser.direccion || "",
+              tipo_sangre: newUser.tipo_sangre || "",
+              alergias: newUser.alergias || "",
+              condiciones_medicas: newUser.condiciones_medicas || "",
+              contacto_emergencia_nombre: newUser.contacto_emergencia_nombre || "",
+              contacto_emergencia_telefono: newUser.contacto_emergencia_telefono || "",
+            }),
+          });
           const patientResult = await patientResponse.json();
 
           if (patientResult.success) {
@@ -146,14 +152,13 @@ const Administrador = () => {
           console.error("Error al crear el usuario:", userResult.message);
         }
       } else {
-        const response = await fetch(`${BASE_URL}/api/v1/admin/users`, {
+        const response = await fetch(`http://localhost:3000/api/v1/admin/users`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
             ...newUser,
-            password: "password123",
           }),
         });
         const result = await response.json();
@@ -172,7 +177,7 @@ const Administrador = () => {
 
   const handleSaveQuirofano = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/api/v1/admin/quirofanos`, {
+      const response = await fetch(`http://localhost:3000/api/v1/admin/quirofanos`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -180,7 +185,7 @@ const Administrador = () => {
         body: JSON.stringify({
           nombre: newQuirofano.nombre,
           numero: newQuirofano.numero,
-          categoria_id: 1, // Valor por defecto, ajustar según necesidades
+          categoria_id: 1, // Default value, should be updated based on categories
           capacidad_personas: newQuirofano.capacidad_personas,
           equipamiento_especial: newQuirofano.equipamiento_especial,
           ubicacion: newQuirofano.ubicacion,
@@ -210,7 +215,7 @@ const Administrador = () => {
 
   const fetchQuirofanos = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/api/v1/admin/quirofanos`);
+      const response = await fetch(`http://localhost:3000/api/v1/admin/quirofanos`);
       const result = await response.json();
 
       if (result.success) {
@@ -222,9 +227,10 @@ const Administrador = () => {
       console.error("Error al obtener los quirófanos:", error);
     }
   };
+
   const fetchUsers = async () => {
     try {
-      const response = await fetch(`${BASE_URL}/api/v1/admin/users`);
+      const response = await fetch(`http://localhost:3000/api/v1/admin/users`);
       const result = await response.json();
       if (result.success) {
         setUsers(result.data);
@@ -236,9 +242,39 @@ const Administrador = () => {
     }
   };
 
+  const fetchStatistics = async () => {
+    try {
+      const response = await fetch(`http://localhost:3000/api/v1/admin/estadisticas`);
+      const result = await response.json();
+      if (result.success) {
+        setStatistics(result.data);
+      } else {
+        console.error("Error al obtener las estadísticas:", result.message);
+      }
+    } catch (error) {
+      console.error("Error al obtener las estadísticas:", error);
+    }
+  };
+
+  const fetchRoles = async () => {
+    try {
+      const response = await fetch(`http://localhost:3000/api/v1/admin/roles`);
+      const result = await response.json();
+      if (result.success) {
+        setRoles(result.data);
+      } else {
+        console.error("Error al obtener los roles:", result.message);
+      }
+    } catch (error) {
+      console.error("Error al obtener los roles:", error);
+    }
+  };
+
   useEffect(() => {
     fetchUsers();
     fetchQuirofanos();
+    fetchStatistics();
+    fetchRoles();
   }, []);
 
   const getRoleIcon = (rol_id) => {
@@ -659,7 +695,7 @@ const Administrador = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm">Cirugías Hoy</p>
-                    <p className="text-2xl font-bold text-gray-900">8</p>
+                    <p className="text-2xl font-bold text-gray-900">{statistics.cirugias_dia}</p>
                   </div>
                   <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
                     <Activity className="w-6 h-6 text-blue-600" />
@@ -671,7 +707,7 @@ const Administrador = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm">En Curso</p>
-                    <p className="text-2xl font-bold text-gray-900">3</p>
+                    <p className="text-2xl font-bold text-gray-900">{statistics.cirugias_en_curso}</p>
                   </div>
                   <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
                     <Clock className="w-6 h-6 text-green-600" />
@@ -683,7 +719,7 @@ const Administrador = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm">Promedio Diario</p>
-                    <p className="text-2xl font-bold text-gray-900">12</p>
+                    <p className="text-2xl font-bold text-gray-900">{statistics.promedio_cirugias_dia}</p>
                   </div>
                   <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                     <BarChart3 className="w-6 h-6 text-purple-600" />
@@ -695,7 +731,7 @@ const Administrador = () => {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-gray-600 text-sm">Incidentes</p>
-                    <p className="text-2xl font-bold text-red-600">2</p>
+                    <p className="text-2xl font-bold text-red-600">{statistics.incidentes_mes}</p>
                   </div>
                   <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
                     <AlertTriangle className="w-6 h-6 text-red-600" />
@@ -864,6 +900,21 @@ const Administrador = () => {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Contraseña
+                  </label>
+                  <input
+                    type="password"
+                    value={newUser.password}
+                    onChange={(e) =>
+                      setNewUser({ ...newUser, password: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
+                    placeholder="Ingrese la contraseña"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Rol
                   </label>
                   <select
@@ -877,11 +928,11 @@ const Administrador = () => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 text-sm"
                   >
                     <option value="">Seleccionar rol</option>
-                    <option value="1">Cirujano</option>
-                    <option value="2">Instrumentador</option>
-                    <option value="3">Enfermera Jefe</option>
-                    <option value="4">Médico</option>
-                    <option value="5">Paciente</option>
+                    {roles.map((rol) => (
+                      <option key={rol.id} value={rol.id}>
+                        {rol.nombre} - {rol.descripcion}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
