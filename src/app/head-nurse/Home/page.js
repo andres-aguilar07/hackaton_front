@@ -1,16 +1,19 @@
 "use client";
+import { insertSurgery, getAllSurgeries, updateSurgeryStatus, deleteSurgery } from "../../../controllers/surgeryController";
+import { 
+  getQuirofanos, 
+  getTiposCirugia, 
+  getCirujanosPrincipales,
+  getAuxiliares,
+  getAnestesiologos,
+  getInstrumentadores,
+  getPacientes
+} from "../../../controllers/referenceDataController";
 import { useState, useEffect } from "react";
 import {
   Plus, Pencil, Trash2, Play, Pause, CheckCircle, Clock, X,
   Calendar, Clock as TimeIcon, User, Scissors, Users, Zap, ClipboardList
 } from "lucide-react";
-
-const cirujanos = ["Dr. Rodríguez", "Dra. Martínez", "Dr. López", "Dra. Fernández"];
-const auxiliares = ["Aux. Gómez", "Aux. Pérez", "Aux. Torres", "Aux. Ramírez"];
-const soportes = ["Anest. Jiménez", "Anest. Ruiz", "Anest. Vargas"];
-const instrumentadores = ["Instr. Díaz", "Instr. Suárez", "Instr. García", "Instr. Mendoza"];
-const cirugias = ["Apendicectomía", "Colecistectomía", "Cesárea", "Herniorrafia", "Artroscopia", "Histerectomía"];
-const quirofanos = ["Quirófano 1", "Quirófano 2", "Quirófano 3", "Quirófano 4"];
 
 const statusOptions = {
   scheduled: { label: "Programada", color: "bg-purple-100 text-purple-800", icon: <Clock size={16} /> },
@@ -25,12 +28,23 @@ export default function SurgeryDashboard() {
   const [formOpen, setFormOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [action, setAction] = useState({ type: "", index: null });
+  
+  // Reference data states
+  const [quirofanos, setQuirofanos] = useState([]);
+  const [tiposCirugia, setTiposCirugia] = useState([]);
+  const [cirujanos, setCirujanos] = useState([]);
+  const [auxiliares, setAuxiliares] = useState([]);
+  const [anestesiologos, setAnestesiologos] = useState([]);
+  const [instrumentadores, setInstrumentadores] = useState([]);
+  const [pacientes, setPacientes] = useState([]);
+  
   const [formData, setFormData] = useState({
-    room: "",
-    procedure: "",
-    surgeon: "",
+    paciente_id: "",
+    quirofano_id: "",
+    tipo_cirugia_id: "",
+    cirujano_principal_id: "",
+    soporte_medico_id: "",
     assistants: [],
-    support: "",
     instrumenters: [],
     status: "scheduled",
     date: "",
@@ -38,6 +52,53 @@ export default function SurgeryDashboard() {
     notes: ""
   });
   const [editingIndex, setEditingIndex] = useState(null);
+
+  // Load all reference data
+  useEffect(() => {
+    const loadReferenceData = async () => {
+      const [
+        quirofanosRes,
+        tiposCirugiaRes,
+        cirujanosPrincipalesRes,
+        auxiliaresRes,
+        anestesiologosRes,
+        instrumentadoresRes,
+        pacientesRes
+      ] = await Promise.all([
+        getQuirofanos(),
+        getTiposCirugia(),
+        getCirujanosPrincipales(),
+        getAuxiliares(),
+        getAnestesiologos(),
+        getInstrumentadores(),
+        getPacientes()
+      ]);
+
+      setQuirofanos(quirofanosRes.data || []);
+      setTiposCirugia(tiposCirugiaRes.data || []);
+      setCirujanos(cirujanosPrincipalesRes.data || []);
+      setAuxiliares(auxiliaresRes.data || []);
+      setAnestesiologos(anestesiologosRes.data || []);
+      setInstrumentadores(instrumentadoresRes.data || []);
+      setPacientes(pacientesRes.data || []);
+    };
+
+    loadReferenceData();
+  }, []);
+
+  // Load surgeries
+  useEffect(() => {
+    const loadSurgeries = async () => {
+      const { data, error } = await getAllSurgeries();
+      if (error) {
+        console.error('Error loading surgeries:', error);
+        return;
+      }
+      setSurgeries(data || []);
+    };
+
+    loadSurgeries();
+  }, []);
 
   // Set default date to today and time to next full hour
   useEffect(() => {
@@ -53,59 +114,86 @@ export default function SurgeryDashboard() {
     }
   }, [formOpen, formData.date]);
 
-  const handleSubmit = () => {
-    if (!formData.room || !formData.procedure || !formData.surgeon || !formData.date || !formData.time) {
-      alert("Por favor complete todos los campos obligatorios");
+  const handleSubmit = async () => {
+    const required = [
+      "paciente_id",
+      "quirofano_id",
+      "tipo_cirugia_id",
+      "cirujano_principal_id",
+      "date",
+      "time"
+    ];
+    
+    for (const field of required) {
+      if (!formData[field]) {
+        alert("Faltan campos requeridos");
+        return;
+      }
+    }
+
+    const { data, error } = await insertSurgery(formData);
+    if (error) {
+      alert("Error al guardar: " + error.message);
       return;
     }
 
-    if (editingIndex !== null) {
-      const updated = [...surgeries];
-      updated[editingIndex] = formData;
-      setSurgeries(updated);
-    } else {
-      setSurgeries([...surgeries, formData]);
-    }
+    // Refresh surgeries list
+    const { data: updatedSurgeries } = await getAllSurgeries();
+    setSurgeries(updatedSurgeries || []);
     closeForm();
   };
 
-  const handleStatusChange = (index, newStatus) => {
-    const updated = [...surgeries];
-    updated[index].status = newStatus;
-    setSurgeries(updated);
+  const handleStatusChange = async (id, newStatus) => {
+    const { error } = await updateSurgeryStatus(id, newStatus);
+    if (error) {
+      alert("Error al actualizar estado: " + error.message);
+      return;
+    }
+
+    // Refresh surgeries list
+    const { data: updatedSurgeries } = await getAllSurgeries();
+    setSurgeries(updatedSurgeries || []);
     setConfirmOpen(false);
   };
 
-  const confirmAction = (type, index) => {
-    setAction({ type, index });
+  const handleDelete = async (id) => {
+    const { error } = await deleteSurgery(id);
+    if (error) {
+      alert("Error al eliminar: " + error.message);
+      return;
+    }
+
+    // Refresh surgeries list
+    const { data: updatedSurgeries } = await getAllSurgeries();
+    setSurgeries(updatedSurgeries || []);
+    setConfirmOpen(false);
+  };
+
+  const confirmAction = (type, id) => {
+    setAction({ type, id });
     setConfirmOpen(true);
   };
 
   const executeAction = () => {
     switch (action.type) {
       case "delete":
-        handleDelete(action.index);
+        handleDelete(action.id);
         break;
       case "start":
-        handleStatusChange(action.index, "in_progress");
+        handleStatusChange(action.id, "in_progress");
         break;
       case "pause":
-        handleStatusChange(action.index, "paused");
+        handleStatusChange(action.id, "paused");
         break;
       case "complete":
-        handleStatusChange(action.index, "completed");
+        handleStatusChange(action.id, "completed");
         break;
       case "postpone":
-        handleStatusChange(action.index, "postponed");
+        handleStatusChange(action.id, "postponed");
         break;
       default:
         break;
     }
-  };
-
-  const handleDelete = (index) => {
-    setSurgeries(surgeries.filter((_, i) => i !== index));
-    setConfirmOpen(false);
   };
 
   const handleMultiSelect = (field, value, isChecked) => {
@@ -122,11 +210,12 @@ export default function SurgeryDashboard() {
   const closeForm = () => {
     setFormOpen(false);
     setFormData({
-      room: "",
-      procedure: "",
-      surgeon: "",
+      paciente_id: "",
+      quirofano_id: "",
+      tipo_cirugia_id: "",
+      cirujano_principal_id: "",
+      soporte_medico_id: "",
       assistants: [],
-      support: "",
       instrumenters: [],
       status: "scheduled",
       date: "",
@@ -149,7 +238,7 @@ export default function SurgeryDashboard() {
         required={required}
       >
         <option value="">Seleccionar...</option>
-        {options.map((opt, idx) => <option key={idx} value={opt}>{opt}</option>)}
+        {options.map((opt, idx) => <option key={idx} value={opt.id}>{opt.nombre}</option>)}
       </select>
     </div>
   );
@@ -166,11 +255,11 @@ export default function SurgeryDashboard() {
             <input
               type="checkbox"
               id={`${fieldName}-${idx}`}
-              checked={selectedValues.includes(option)}
-              onChange={(e) => handleMultiSelect(fieldName, option, e.target.checked)}
+              checked={selectedValues.includes(option.id)}
+              onChange={(e) => handleMultiSelect(fieldName, option.id, e.target.checked)}
               className="mr-2 h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
             />
-            <label htmlFor={`${fieldName}-${idx}`} className="text-sm text-gray-700">{option}</label>
+            <label htmlFor={`${fieldName}-${idx}`} className="text-sm text-gray-700">{option.nombre}</label>
           </div>
         ))}
       </div>
@@ -287,6 +376,7 @@ export default function SurgeryDashboard() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="p-3 text-sm font-semibold text-gray-700">Fecha/Hora</th>
+                <th className="p-3 text-sm font-semibold text-gray-700">Paciente</th>
                 <th className="p-3 text-sm font-semibold text-gray-700">Procedimiento</th>
                 <th className="p-3 text-sm font-semibold text-gray-700">Quirófano</th>
                 <th className="p-3 text-sm font-semibold text-gray-700">Cirujano</th>
@@ -297,24 +387,27 @@ export default function SurgeryDashboard() {
             <tbody className="divide-y divide-gray-200">
               {surgeries.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="p-4 text-center text-gray-500">
+                  <td colSpan="7" className="p-4 text-center text-gray-500">
                     No hay cirugías programadas
                   </td>
                 </tr>
               ) : (
-                surgeries.map((surgery, index) => (
-                  <tr key={index} className="hover:bg-gray-50 transition">
+                surgeries.map((surgery) => (
+                  <tr key={surgery.id} className="hover:bg-gray-50 transition">
                     <td className="p-3">
                       <div className="text-sm">
                         <div className="font-medium text-gray-900">{surgery.date}</div>
                         <div className="text-gray-500">{surgery.time}</div>
                       </div>
                     </td>
+                    <td className="p-3 text-sm text-gray-900">{surgery.patient}</td>
                     <td className="p-3">
                       <div className="font-medium text-gray-900">{surgery.procedure}</div>
-                      <div className="text-xs text-gray-500 mt-1">
-                        {surgery.instrumenters.length > 0 ? surgery.instrumenters.join(", ") : "Sin instrumentadores"}
-                      </div>
+                      {surgery.instrumenters.length > 0 && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          {surgery.instrumenters.join(", ")}
+                        </div>
+                      )}
                     </td>
                     <td className="p-3 text-sm text-gray-900">{surgery.room}</td>
                     <td className="p-3 text-sm text-gray-900">{surgery.surgeon}</td>
@@ -323,22 +416,10 @@ export default function SurgeryDashboard() {
                     </td>
                     <td className="p-3">
                       <div className="flex justify-end gap-1">
-                        <button 
-                          onClick={() => {
-                            setFormData({...surgery});
-                            setEditingIndex(index);
-                            setFormOpen(true);
-                          }} 
-                          className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-full transition"
-                          title="Editar"
-                        >
-                          <Pencil size={18} />
-                        </button>
-                        
                         {getAvailableActions(surgery.status).map((btn, i) => (
                           <button
                             key={i}
-                            onClick={() => confirmAction(btn.action, index)}
+                            onClick={() => confirmAction(btn.action, surgery.id)}
                             className={`p-2 hover:bg-gray-100 rounded-full transition ${btn.color}`}
                             title={btn.label}
                           >
@@ -347,7 +428,7 @@ export default function SurgeryDashboard() {
                         ))}
                         
                         <button 
-                          onClick={() => confirmAction("delete", index)} 
+                          onClick={() => confirmAction("delete", surgery.id)} 
                           className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded-full transition"
                           title="Eliminar"
                         >
@@ -384,18 +465,39 @@ export default function SurgeryDashboard() {
                 {renderDateTime()}
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {renderSelect("Quirófano", formData.room, e => setFormData({ ...formData, room: e.target.value }), quirofanos, true, <ClipboardList size={16} />)}
-                  {renderSelect("Procedimiento", formData.procedure, e => setFormData({ ...formData, procedure: e.target.value }), cirugias, true, <Scissors size={16} />)}
+                  {renderSelect("Paciente", formData.paciente_id, 
+                    e => setFormData({ ...formData, paciente_id: e.target.value }), 
+                    pacientes.map(p => ({ id: p.id, nombre: p.nombre })), true)}
+                    
+                  {renderSelect("Quirófano", formData.quirofano_id,
+                    e => setFormData({ ...formData, quirofano_id: e.target.value }),
+                    quirofanos, true, <ClipboardList size={16} />)}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {renderSelect("Cirujano Jefe", formData.surgeon, e => setFormData({ ...formData, surgeon: e.target.value }), cirujanos, true, <User size={16} />)}
-                  {renderSelect("Soporte Médico", formData.support, e => setFormData({ ...formData, support: e.target.value }), soportes, false, <Zap size={16} />)}
+                  {renderSelect("Tipo de Cirugía", formData.tipo_cirugia_id,
+                    e => setFormData({ ...formData, tipo_cirugia_id: e.target.value }),
+                    tiposCirugia, true, <Scissors size={16} />)}
+                    
+                  {renderSelect("Cirujano Principal", formData.cirujano_principal_id,
+                    e => setFormData({ ...formData, cirujano_principal_id: e.target.value }),
+                    cirujanos, true, <User size={16} />)}
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {renderSelect("Anestesiólogo", formData.soporte_medico_id,
+                    e => setFormData({ ...formData, soporte_medico_id: e.target.value }),
+                    anestesiologos, false, <Zap size={16} />)}
                 </div>
 
                 <div className="grid grid-cols-1 gap-4">
-                  {renderMultiSelect("Cirujanos Auxiliares", formData.assistants, auxiliares, "assistants", false, <Users size={16} />)}
-                  {renderMultiSelect("Instrumentadores", formData.instrumenters, instrumentadores, "instrumenters", false, <Users size={16} />)}
+                  {renderMultiSelect("Cirujanos Auxiliares", formData.assistants,
+                    auxiliares.map(a => ({ id: a.id, nombre: a.nombre })),
+                    "assistants", false, <Users size={16} />)}
+                    
+                  {renderMultiSelect("Instrumentadores", formData.instrumenters,
+                    instrumentadores.map(i => ({ id: i.id, nombre: i.nombre })),
+                    "instrumenters", false, <Users size={16} />)}
                 </div>
 
                 <div className="space-y-1">
