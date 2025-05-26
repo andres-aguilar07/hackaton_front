@@ -2,15 +2,79 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
 
-  const handleLogin = (e) => {
+  const handleRoleRedirect = (rol) => {
+    switch (rol) {
+      case 'enfermera_jefe':
+        router.push('/head-nurse');
+        break;
+      case 'administrador':
+        router.push('/administrador');
+        break;
+      case 'central':
+        router.push('/central');
+        break;
+      case 'farmacia':
+        router.push('/pharmacy');
+        break;
+      case 'instrumentador':
+        router.push('/surgical-tech');
+        break;
+      default:
+        setError('Rol no válido');
+    }
+  };
+
+  const handleLogin = async (e) => {
     e.preventDefault();
-    console.log('Login:', { email, password });
+    setError('');
+    setLoading(true);
+    
+    try {
+      const response = await fetch('http://localhost:3000/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ email, password }),
+      });
+
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responseData.message || 'Error al iniciar sesión');
+      }
+
+      if (responseData.success && responseData.data) {
+        const { token, user } = responseData.data;
+        
+        if (token && user && user.rol) {
+          // Store the token in localStorage or a secure storage method
+          localStorage.setItem('token', token);
+          // Store user data if needed
+          localStorage.setItem('userData', JSON.stringify(user));
+          // Redirect based on role
+          handleRoleRedirect(user.rol.nombre);
+        } else {
+          setError('Datos de usuario incompletos');
+        }
+      } else {
+        setError('Respuesta del servidor inválida');
+      }
+    } catch (err) {
+      setError(err.message || 'Error al iniciar sesión');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -25,6 +89,12 @@ export default function LoginPage() {
         <h2 className="text-2xl font-bold mb-6 text-gray-800 text-center tracking-tight">
           Iniciar Sesión
         </h2>
+
+        {error && (
+          <div className="w-full mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+            {error}
+          </div>
+        )}
 
         <div className="w-full">
           <label className="block mb-2 text-sm font-semibold text-gray-700">Correo</label>
@@ -87,9 +157,12 @@ export default function LoginPage() {
 
         <button
           type="submit"
-          className="mt-6 w-full bg-gray-900 text-white py-3 rounded-md hover:bg-gray-700 transition font-medium"
+          disabled={loading}
+          className={`mt-6 w-full bg-gray-900 text-white py-3 rounded-md hover:bg-gray-700 transition font-medium ${
+            loading ? 'opacity-50 cursor-not-allowed' : ''
+          }`}
         >
-          Entrar
+          {loading ? 'Iniciando sesión...' : 'Entrar'}
         </button>
       </form>
     </div>
