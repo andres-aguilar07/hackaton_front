@@ -147,18 +147,10 @@ export const getCirugiasEnCurso = async () => {
 export const crearMaterial = async (materialData) => {
   try {
     // Validate required fields
-    if (!materialData.nombre || !materialData.codigo) {
+    if (!materialData.nombre ) {
       return { error: "El nombre y código son campos requeridos" };
     }
 
-    // Validate numeric fields
-    if (typeof materialData.stock !== 'number' || materialData.stock < 0) {
-      return { error: "El stock debe ser un número positivo" };
-    }
-
-    if (typeof materialData.stock_minimo !== 'number' || materialData.stock_minimo < 0) {
-      return { error: "El stock mínimo debe ser un número positivo" };
-    }
 
     // Check if material with same code already exists
     try {
