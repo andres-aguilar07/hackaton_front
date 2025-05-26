@@ -19,7 +19,7 @@ import {
   Timer,
   FileText,
   Download,
-  Truck,
+  Handshake,
   CheckSquare,
   X,
   Save,
@@ -160,41 +160,18 @@ const Central = () => {
   };
 
   // Notificaciones
-  const [notificationsList, setNotificationsList] = useState([
-    {
-      id: 1,
-      tipo: "URGENTE",
-      titulo: "Solicitud de Instrumentos",
-      mensaje: "Solicitud adicional: 2 Pinzas Kelly para Q-01",
-      prioridad: "ALTA",
-      leida: false,
-      url_accion: "/cirugias/1",
-      fecha_creacion: "2024-05-26T10:30:00",
-      fecha_lectura: null,
-    },
-    {
-      id: 2,
-      tipo: "PROGRAMADA",
-      titulo: "Preparación de Instrumental",
-      mensaje: "Preparar instrumental para Apendicectomía",
-      prioridad: "MEDIA",
-      leida: false,
-      url_accion: "/cirugias/2",
-      fecha_creacion: "2024-05-26T09:15:00",
-      fecha_lectura: null,
-    },
-    {
-      id: 3,
-      tipo: "STOCK",
-      titulo: "Alerta de Stock",
-      mensaje: "Stock bajo: Tijeras Mayo (8 disponibles)",
-      prioridad: "MEDIA",
-      leida: false,
-      url_accion: "/stock/15",
-      fecha_creacion: "2024-05-26T08:00:00",
-      fecha_lectura: null,
-    },
-  ]);
+  const [notificationsList, setNotificationsList] = useState([  ]);
+
+useEffect(() => {
+  const fetchnotificaciones = async () => {
+    const { data, error } = await supabase
+      .from('notificaciones')
+      .select('*')
+    console.log(data);
+    setNotificationsList(data);
+  };
+  fetchnotificaciones();
+}, []);
 
   // Registro de esterilización
   const [sterilizationLog, setSterilizationLog] = useState([
@@ -233,6 +210,26 @@ const Central = () => {
     cirugia: "",
     operador: "",
     ciclo: "Autoclave - 134°C - 15min",
+  });
+
+  // Nuevo estado para el modal de edición/agregar stock
+  const [stockModal, setStockModal] = useState({
+    show: false,
+    type: '', // 'edit' o 'add'
+    item: null
+  });
+
+  // Nuevo estado para los datos temporales del modal
+  const [tempStockData, setTempStockData] = useState({
+    cantidad_minima: 0,
+    ubicacion_almacen: '',
+    cantidad_agregar: 0
+  });
+
+  // Nuevo estado para el modal de detalles
+  const [detailsModal, setDetailsModal] = useState({
+    show: false,
+    surgery: null
   });
 
   const getStockStatus = (item) => {
@@ -294,6 +291,73 @@ const Central = () => {
       operador: "",
       ciclo: "Autoclave - 134°C - 15min",
     });
+  };
+
+  // Función para abrir el modal de edición/agregar stock
+  const openStockModal = (type, item) => {
+    setStockModal({
+      show: true,
+      type,
+      item
+    });
+    setTempStockData({
+      cantidad_minima: item.cantidad_minima,
+      ubicacion_almacen: item.ubicacion_almacen,
+      cantidad_agregar: 0
+    });
+  };
+
+  // Función para cerrar el modal de stock
+  const closeStockModal = () => {
+    setStockModal({
+      show: false,
+      type: '',
+      item: null
+    });
+  };
+
+  // Función para actualizar el stock
+  const handleStockUpdate = (itemId, newData) => {
+    setStock(prevStock => 
+      prevStock.map(item => 
+        item.id === itemId 
+          ? { ...item, ...newData }
+          : item
+      )
+    );
+    closeStockModal();
+  };
+
+  // Función para agregar nuevo stock
+  const handleAddStock = (itemId, cantidad) => {
+    setStock(prevStock => 
+      prevStock.map(item => 
+        item.id === itemId 
+          ? { ...item, cantidad_disponible: item.cantidad_disponible + cantidad }
+          : item
+      )
+    );
+    closeStockModal();
+  };
+
+  // Función para abrir el modal de detalles
+  const openDetailsModal = (surgery) => {
+    setDetailsModal({
+      show: true,
+      surgery
+    });
+  };
+
+  // Función para cerrar el modal de detalles
+  const closeDetailsModal = () => {
+    setDetailsModal({
+      show: false,
+      surgery: null
+    });
+  };
+  // Función para manejar la entrega de todos los instrumentos
+  const handleDeliverAll = (surgeryId) => {
+    console.log(surgeryId);
   };
 
   const TabButton = ({ id, icon: Icon, label, active, onClick, badge }) => (
@@ -564,6 +628,183 @@ const Central = () => {
     }
   };
 
+  // Agregar el modal de stock antes del return final
+  const renderStockModal = () => {
+    if (!stockModal.show) return null;
+
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-md">
+          <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            {stockModal.type === 'edit' ? 'Editar Stock' : 'Agregar Stock'}
+          </h2>
+          
+          {stockModal.type === 'edit' ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cantidad Mínima
+                </label>
+                <input
+                  type="number"
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={tempStockData.cantidad_minima}
+                  onChange={(e) => {
+                    setTempStockData(prev => ({
+                      ...prev,
+                      cantidad_minima: parseInt(e.target.value)
+                    }));
+                  }}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Ubicación
+                </label>
+                <input
+                  type="text"
+                  className="w-full border rounded-lg px-3 py-2"
+                  value={tempStockData.ubicacion_almacen}
+                  onChange={(e) => {
+                    setTempStockData(prev => ({
+                      ...prev,
+                      ubicacion_almacen: e.target.value
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Cantidad a Agregar
+                </label>
+                <input
+                  type="number"
+                  className="w-full border rounded-lg px-3 py-2"
+                  min="1"
+                  value={tempStockData.cantidad_agregar}
+                  onChange={(e) => {
+                    setTempStockData(prev => ({
+                      ...prev,
+                      cantidad_agregar: parseInt(e.target.value)
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end gap-3 mt-6">
+            <button
+              onClick={closeStockModal}
+              className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={() => {
+                if (stockModal.type === 'edit') {
+                  handleStockUpdate(stockModal.item.id, {
+                    cantidad_minima: tempStockData.cantidad_minima,
+                    ubicacion_almacen: tempStockData.ubicacion_almacen
+                  });
+                } else {
+                  handleAddStock(stockModal.item.id, tempStockData.cantidad_agregar);
+                }
+              }}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Guardar Cambios
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // Agregar el modal de detalles antes del return final
+  const renderDetailsModal = () => {
+    if (!detailsModal.show || !detailsModal.surgery) return null;
+
+    const surgery = detailsModal.surgery;
+
+    return (
+      <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center">
+        <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-2xl">
+          <div className="flex justify-between items-start mb-6">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Detalles de la Cirugía
+            </h2>
+            <button
+              onClick={closeDetailsModal}
+              className="text-gray-400 hover:text-gray-500"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <div className="space-y-6">
+            <div>
+              <h3 className="font-medium text-gray-900 mb-2">Información General</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-600">Procedimiento</p>
+                  <p className="font-medium">{surgery.procedimiento}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Quirófano</p>
+                  <p className="font-medium">{surgery.quirofano}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Cirujano</p>
+                  <p className="font-medium">Dr. {surgery.cirujano}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-600">Hora de Inicio</p>
+                  <p className="font-medium">{surgery.horaInicio}</p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-medium text-gray-900 mb-2">Instrumental Asignado</h3>
+              <div className="space-y-2">
+                {surgery.instrumentos.map((instrumento, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium">{instrumento.nombre}</span>
+                      <span className="text-sm text-gray-600">
+                        Cantidad: {instrumento.cantidad}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {instrumento.asignado ? (
+                        <span className="flex items-center gap-1 text-green-600 text-sm">
+                          <CheckCircle className="w-4 h-4" />
+                          Asignado
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-yellow-600 text-sm">
+                          <Clock className="w-4 h-4" />
+                          Pendiente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
@@ -607,7 +848,7 @@ const Central = () => {
           />
           <TabButton
             id="entregas"
-            icon={Truck}
+            icon={Handshake}
             label="Entregas"
             active={activeTab === "entregas"}
             onClick={setActiveTab}
@@ -747,10 +988,16 @@ const Central = () => {
                       </td>
                       <td className="py-4 px-6">
                         <div className="flex gap-2">
-                          <button className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg">
+                          <button 
+                            onClick={() => openStockModal('edit', item)}
+                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          >
                             <Edit className="w-4 h-4" />
                           </button>
-                          <button className="p-2 text-green-600 hover:bg-green-50 rounded-lg">
+                          <button 
+                            onClick={() => openStockModal('add', item)}
+                            className="p-2 text-green-600 hover:bg-green-50 rounded-lg"
+                          >
                             <Plus className="w-4 h-4" />
                           </button>
                         </div>
@@ -853,11 +1100,17 @@ const Central = () => {
                     </div>
 
                     <div className="flex gap-3">
-                      <button className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-                        <Truck className="w-4 h-4" />
+                      <button 
+                        onClick={() => handleDeliverAll(surgery.id)}
+                        className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
+                      >
+                        <Handshake className="w-4 h-4" />
                         Entregar Todo
                       </button>
-                      <button className="flex items-center gap-2 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50">
+                      <button 
+                        onClick={() => openDetailsModal(surgery)}
+                        className="flex items-center gap-2 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50"
+                      >
                         <Eye className="w-4 h-4" />
                         Ver Detalles
                       </button>
@@ -1151,6 +1404,12 @@ const Central = () => {
 
       {/* Renderizar el modal cuando showModal es true */}
       {showModal && renderModal()}
+      
+      {/* Agregar el modal de stock */}
+      {renderStockModal()}
+      
+      {/* Agregar el modal de detalles */}
+      {renderDetailsModal()}
     </div>
   );
 };
