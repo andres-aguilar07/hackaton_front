@@ -25,6 +25,7 @@ import {
   BriefcaseMedical,
 } from "lucide-react";
 import TabButton from "../components/TabButton";
+import jsPDF from 'jspdf';
 
 const Administrador = () => {
   const [activeTab, setActiveTab] = useState("usuarios");
@@ -105,6 +106,28 @@ const Administrador = () => {
       contacto_emergencia_telefono: "",
     });
   };
+  const [surgeries, setSurgeries] = useState([
+    { 
+      id: 1, 
+      fecha: '2024-05-26', 
+      cirujano: 'Dr. Carlos Mendez',
+      instrumentador: 'Ana García',
+      procedimiento: 'Bypass Coronario',
+      quirofano: 'Q-01',
+      instrumentos: { solicitados: 15, utilizados: 15, contados: true },
+      estado: 'completada'
+    },
+    { 
+      id: 2, 
+      fecha: '2024-05-25', 
+      cirujano: 'Dr. Pedro Santos',
+      instrumentador: 'Ana García',
+      procedimiento: 'Artroscopia de Rodilla',
+      quirofano: 'Q-02',
+      instrumentos: { solicitados: 8, utilizados: 8, contados: true },
+      estado: 'completada'
+    }
+  ]);
 
   const handleSaveUser = async () => {
     try {
@@ -312,8 +335,43 @@ const Administrador = () => {
   });
 
   const generatePDF = (surgery) => {
-    // Simulación de generación de PDF
-    alert(`Generando informe PDF para cirugía: ${surgery.procedimiento}`);
+    // Crear nuevo documento PDF
+    const doc = new jsPDF();
+    
+    // Configurar fuente y tamaño
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    
+    // Título
+    doc.text("Informe de Cirugía", 105, 20, { align: "center" });
+    
+    // Información de la cirugía
+    doc.setFontSize(12);
+    doc.setFont("helvetica", "normal");
+    
+    // Datos principales
+    doc.text(`Procedimiento: ${surgery.procedimiento}`, 20, 40);
+    doc.text(`Fecha: ${surgery.fecha}`, 20, 50);
+    doc.text(`Quirófano: ${surgery.quirofano}`, 20, 60);
+    doc.text(`Estado: ${surgery.estado}`, 20, 70);
+    
+    // Personal médico
+    doc.text("Personal Médico:", 20, 90);
+    doc.text(`Cirujano: ${surgery.cirujano}`, 30, 100);
+    doc.text(`Instrumentador: ${surgery.instrumentador}`, 30, 110);
+    
+    // Control de instrumentos
+    doc.text("Control de Instrumentos:", 20, 130);
+    doc.text(`Solicitados: ${surgery.instrumentos.solicitados}`, 30, 140);
+    doc.text(`Utilizados: ${surgery.instrumentos.utilizados}`, 30, 150);
+    doc.text(`Conteo correcto: ${surgery.instrumentos.contados ? "Sí" : "No"}`, 30, 160);
+    
+    // Pie de página
+    doc.setFontSize(10);
+    doc.text("Documento generado automáticamente", 105, 280, { align: "center" });
+    
+    // Guardar el PDF
+    doc.save(`cirugia-${surgery.id}.pdf`);
   };
 
   return (
@@ -346,7 +404,7 @@ const Administrador = () => {
             active={activeTab === "usuarios"}
             onClick={setActiveTab}
           />
-          {/* <TabButton
+          <TabButton
             id="informes"
             icon={FileText}
             label="Informes"
@@ -359,7 +417,7 @@ const Administrador = () => {
             label="Estadísticas"
             active={activeTab === 'estadisticas'}
             onClick={setActiveTab}
-          /> */}
+          />
           <TabButton
             id="quirofanos"
             icon={BriefcaseMedical}
