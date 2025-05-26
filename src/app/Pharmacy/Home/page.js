@@ -14,6 +14,7 @@ import {
   X,
   CheckCircle
 } from "lucide-react";
+import { format } from "date-fns";
 
 const URGENCY_LEVELS = {
   HIGH: { label: "Urgente", style: "bg-red-100 text-red-800" },
@@ -96,7 +97,7 @@ export default function HomePage() {
                   <div>
                     <p className="text-sm">{n.text}</p>
                     <span className="text-xs text-gray-400">
-                      {new Date(n.date).toLocaleString()}
+                      {format(new Date(n.date), "dd/MM/yyyy, HH:mm:ss")}
                     </span>
                   </div>
                 </div>

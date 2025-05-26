@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Calendar,
   CheckCircle,
   Check,
-  X
+  X,
+  AlertCircle,
+  Plus,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  MessageSquare
 } from "lucide-react";
+import { startRecognition, speak } from "../../../utils/speechRecognition.js";
+import { format } from "date-fns";
 
 // Mock data - Replace with real API calls
 const MOCK_SURGERIES = [
@@ -55,6 +64,17 @@ export default function HomePage() {
   const [countdownActive, setCountdownActive] = useState(false);
   const [countdown, setCountdown] = useState(5);
   const [issues, setIssues] = useState("");
+  const [currentItemIndex, setCurrentItemIndex] = useState(0);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [speakEnabled, setSpeakEnabled] = useState(true);
+  const [isListening, setIsListening] = useState(false);
+  const [lastRecognizedText, setLastRecognizedText] = useState("");
+  const [systemSpeaking, setSystemSpeaking] = useState(false);
+  const [countingPhase, setCountingPhase] = useState("instructions"); // instructions, counting, review
+  const [isVoiceModalOpen, setIsVoiceModalOpen] = useState(false);
+  const [currentInstruction, setCurrentInstruction] = useState("");
+  const recognitionRef = useRef(null);
+  const speakTimeoutRef = useRef(null);
 
   useEffect(() => {
     let interval;
@@ -79,22 +99,188 @@ export default function HomePage() {
     return () => clearInterval(countdownInterval);
   }, [countdownActive, countdown]);
 
+  useEffect(() => {
+    if (step === "counting" && voiceEnabled) {
+      if (countingPhase === "instructions") {
+        setSystemSpeaking(true);
+        speak("Iniciando conteo inicial de instrumentos. Responda presente, falta, o necesito más para cada instrumento.")
+          .then(() => {
+            setSystemSpeaking(false);
+            setCountingPhase("counting");
+            setCurrentInstruction(`¿El instrumento "${checklist[currentItemIndex].name}" está presente?`);
+            setIsVoiceModalOpen(true);
+          });
+      }
+    }
+    return () => {
+      if (speakTimeoutRef.current) {
+        clearTimeout(speakTimeoutRef.current);
+      }
+    };
+  }, [step, voiceEnabled, countingPhase]);
+
+  useEffect(() => {
+    if (isVoiceModalOpen && voiceEnabled) {
+      // Initialize recognition when modal opens
+      recognitionRef.current = startRecognition(handleVoiceResult);
+      recognitionRef.current?.start();
+      setIsListening(true);
+    } else if (!isVoiceModalOpen && recognitionRef.current) {
+      // Cleanup recognition when modal closes
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+      setIsListening(false);
+    }
+    
+    return () => {
+      // Cleanup on unmount or when dependencies change
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+      setIsListening(false);
+    };
+  }, [isVoiceModalOpen, voiceEnabled]);
+
   const startSurgery = (surgery) => {
     setSelectedSurgery(surgery);
     setStep("precheck");
   };
 
-  const startInitialCount = () => setStep("counting");
-  const confirmCount = () => { setCountdownActive(true); setCountdown(5); };
-  const requestItem = (item) => alert(`Solicitud enviada: ${item}`);
-  const finishSurgery = () => setStep("finalCount");
-  const finalize = () => setStep("completed");
+  const startInitialCount = () => {
+    setStep("counting");
+    setVoiceEnabled(true);
+    setCountingPhase("instructions");
+    if (speakEnabled) {
+      speak("Iniciando conteo inicial de instrumentos. Responda presente, falta, o necesito más para cada instrumento.")
+        .then(() => {
+          setSystemSpeaking(false);
+          setCountingPhase("counting");
+          setCurrentInstruction(`¿El instrumento "${checklist[0].name}" está presente?`);
+          setIsVoiceModalOpen(true);
+        });
+    }
+  };
+
+  const confirmCount = () => {
+    if (speakEnabled) {
+      speak("Iniciando cuenta regresiva para comenzar la cirugía.");
+    }
+    setCountdownActive(true);
+    setCountdown(5);
+  };
+
+  const requestItem = (item) => {
+    if (speakEnabled) {
+      speak(`Solicitando ${item}. Por favor espere.`);
+    }
+    alert(`Solicitud enviada: ${item}`);
+  };
+
+  const finishSurgery = () => {
+    if (speakEnabled) {
+      speak("Finalizando cirugía. Iniciando conteo final de instrumentos.");
+    }
+    setStep("finalCount");
+  };
+
+  const finalize = () => {
+    if (speakEnabled) {
+      speak("Cirugía completada. Gracias por su trabajo.");
+    }
+    setStep("completed");
+  };
+
   const formatTime = (seconds) => {
     const hrs = Math.floor(seconds / 3600);
     const mins = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
     return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
+
+  const handleVoiceResult = (transcript) => {
+    if (step === "counting") {
+      setLastRecognizedText(transcript);
+      setIsListening(false);
+      
+      let status = null;
+      let responseMessage = "";
+
+      if (transcript.includes("presente") || transcript.includes("sí") || transcript.includes("si")) {
+        status = "present";
+        responseMessage = "Instrumento presente, registrado.";
+      } else if (transcript.includes("falta") || transcript.includes("no")) {
+        status = "missing";
+        responseMessage = "Instrumento faltante, registrado.";
+      } else if (transcript.includes("más") || transcript.includes("mas")) {
+        status = "needMore";
+        responseMessage = "Se necesitan más unidades, registrado.";
+      }
+
+      if (status) {
+        const newList = [...checklist];
+        newList[currentItemIndex].status = status;
+        setChecklist(newList);
+        
+        setSystemSpeaking(true);
+        speak(responseMessage).then(() => {
+          setSystemSpeaking(false);
+          if (currentItemIndex < checklist.length - 1) {
+            setCurrentItemIndex(prev => prev + 1);
+            setCurrentInstruction(`¿El instrumento "${checklist[currentItemIndex + 1].name}" está presente?`);
+            // Reopen modal for next item
+            setIsVoiceModalOpen(true);
+          } else {
+            setCountingPhase("review");
+            speak("Conteo inicial completado. Todos los instrumentos han sido verificados. Puede confirmar el conteo cuando esté listo.").then(() => {
+              setSystemSpeaking(false);
+              setVoiceEnabled(false);
+            });
+          }
+        });
+      } else {
+        setSystemSpeaking(true);
+        speak("No he entendido la respuesta. Por favor, diga presente, falta, o necesito más.").then(() => {
+          setSystemSpeaking(false);
+          // Reopen modal to try again
+          setIsVoiceModalOpen(true);
+        });
+      }
+    }
+  };
+
+  const toggleVoiceRecognition = () => {
+    if (voiceEnabled) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+      setVoiceEnabled(false);
+      setIsListening(false);
+      setIsVoiceModalOpen(false);
+      setSystemSpeaking(true);
+      speak("Reconocimiento de voz desactivado").then(() => {
+        setSystemSpeaking(false);
+      });
+    } else {
+      setVoiceEnabled(true);
+      setCurrentItemIndex(0);
+      setCountingPhase("instructions");
+      setSystemSpeaking(true);
+      speak("Reconocimiento de voz activado").then(() => {
+        setSystemSpeaking(false);
+      });
+    }
+  };
+
+  useEffect(() => {
+    if (countdownActive && speakEnabled) {
+      speak(countdown.toString());
+      if (countdown === 0) {
+        speak("Cirugía iniciada. Puede solicitar instrumentos adicionales cuando lo necesite.");
+      }
+    }
+  }, [countdown, countdownActive]);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
@@ -119,7 +305,7 @@ export default function HomePage() {
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-600 mb-3">
                 <Calendar size={16} />
-                <span>{new Date(surgery.scheduledTime).toLocaleString()}</span>
+                <span>{format(new Date(surgery.scheduledTime), "dd/MM/yyyy, HH:mm:ss")}</span>
               </div>
               <button
                 onClick={() => startSurgery(surgery)}
@@ -150,31 +336,113 @@ export default function HomePage() {
 
       {step === "counting" && (
         <section>
-          <h2 className="text-xl font-medium mb-4">Conteo Inicial</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-medium">Conteo Inicial</h2>
+            <div className="flex gap-2 items-center">
+              <div className={`px-3 py-1 rounded-full text-sm flex items-center gap-2 ${voiceEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                <div className={`w-2 h-2 rounded-full ${voiceEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+                Reconocimiento de Voz Activo
+              </div>
+              <button
+                onClick={() => setSpeakEnabled(!speakEnabled)}
+                className={`p-2 rounded-lg ${speakEnabled ? 'bg-blue-600' : 'bg-gray-600'} text-white`}
+              >
+                {speakEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+              </button>
+            </div>
+          </div>
+
+          {voiceEnabled && (
+            <div className="mb-4 p-4 rounded-lg bg-gray-50 border">
+              <div className="flex items-center gap-2 mb-2">
+                <MessageSquare size={20} className="text-gray-600" />
+                <span className="font-medium">Último texto reconocido:</span>
+              </div>
+              <p className="text-gray-700">{lastRecognizedText || "Ningún texto reconocido aún"}</p>
+            </div>
+          )}
+
+          {isVoiceModalOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
+                <h3 className="text-xl font-medium mb-4">Reconocimiento de Voz</h3>
+                <p className="mb-4">{currentInstruction}</p>
+                <div className="flex items-center justify-center gap-4">
+                  <div className="animate-pulse">
+                    <Mic size={48} className="text-blue-600" />
+                  </div>
+                  <p className="text-gray-600">Escuchando...</p>
+                </div>
+                <div className="mt-4 text-center text-sm text-gray-500">
+                  Diga "presente", "falta" o "necesito más"
+                </div>
+              </div>
+            </div>
+          )}
+
+          {isListening && voiceEnabled && !systemSpeaking && (
+            <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-full flex items-center gap-2 animate-pulse shadow-lg">
+              <Mic size={20} />
+              <span>Escuchando... Hable ahora</span>
+            </div>
+          )}
+
+          {systemSpeaking && (
+            <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
+              <Volume2 size={20} />
+              <span>Sistema hablando... espere por favor</span>
+            </div>
+          )}
+
           <div className="space-y-3">
             {checklist.map((item, idx) => (
-              <div key={idx} className="flex items-center gap-3">
+              <div key={idx} className={`flex items-center gap-3 p-4 rounded-lg ${idx === currentItemIndex && voiceEnabled ? 'bg-blue-50' : 'bg-white'}`}>
                 <span className="w-1/3">{item.name}</span>
                 <div className="flex gap-2 flex-wrap">
-                  {INITIAL_STATUS_OPTIONS.map(option => (
-                    <button
-                      key={option.value}
-                      onClick={() => {
-                        const newList = [...checklist];
-                        newList[idx].status = option.value;
-                        setChecklist(newList);
-                      }}
-                      className={`px-3 py-1 border rounded-lg text-sm ${item.status === option.value ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-700'}`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
+                  {INITIAL_STATUS_OPTIONS.map(option => {
+                    let icon = null;
+                    let colorClass = '';
+                    
+                    switch(option.value) {
+                      case 'present':
+                        icon = <Check size={16} />;
+                        colorClass = 'bg-green-600 hover:bg-green-700';
+                        break;
+                      case 'missing':
+                        icon = <X size={16} />;
+                        colorClass = 'bg-red-600 hover:bg-red-700';
+                        break;
+                      case 'needMore':
+                        icon = <Plus size={16} />;
+                        colorClass = 'bg-yellow-600 hover:bg-yellow-700';
+                        break;
+                    }
+
+                    return (
+                      <button
+                        key={option.value}
+                        onClick={() => {
+                          const newList = [...checklist];
+                          newList[idx].status = option.value;
+                          setChecklist(newList);
+                        }}
+                        className={`px-3 py-1 rounded-lg text-sm flex items-center gap-1
+                          ${item.status === option.value 
+                            ? colorClass + ' text-white' 
+                            : 'bg-white text-gray-700 border'}`}
+                      >
+                        {icon}
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
                 {item.status === "missing" && (
                   <button
                     onClick={() => requestItem(item.name)}
-                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm"
+                    className="px-3 py-1 bg-red-600 text-white rounded-lg text-sm flex items-center gap-1"
                   >
+                    <AlertCircle size={16} />
                     Solicitar
                   </button>
                 )}
@@ -183,8 +451,9 @@ export default function HomePage() {
           </div>
           <button
             onClick={confirmCount}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition w-full flex items-center justify-center gap-2"
           >
+            <CheckCircle size={20} />
             Confirmar Conteo
           </button>
           {countdownActive && (
@@ -279,3 +548,4 @@ export default function HomePage() {
     </div>
   );
 }
+
