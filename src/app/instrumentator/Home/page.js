@@ -101,46 +101,40 @@ export default function HomePage() {
 
   useEffect(() => {
     if (step === "counting" && voiceEnabled) {
-      if (countingPhase === "instructions") {
-        setSystemSpeaking(true);
-        speak("Iniciando conteo inicial de instrumentos. Responda presente, falta, o necesito más para cada instrumento.")
-          .then(() => {
-            setSystemSpeaking(false);
-            setCountingPhase("counting");
-            setCurrentInstruction(`¿El instrumento "${checklist[currentItemIndex].name}" está presente?`);
-            setIsVoiceModalOpen(true);
-          });
+      if (!recognitionRef.current) {
+        recognitionRef.current = startRecognition(handleVoiceResult);
       }
     }
     return () => {
-      if (speakTimeoutRef.current) {
-        clearTimeout(speakTimeoutRef.current);
-      }
-    };
-  }, [step, voiceEnabled, countingPhase]);
-
-  useEffect(() => {
-    if (isVoiceModalOpen && voiceEnabled) {
-      // Initialize recognition when modal opens
-      recognitionRef.current = startRecognition(handleVoiceResult);
-      recognitionRef.current?.start();
-      setIsListening(true);
-    } else if (!isVoiceModalOpen && recognitionRef.current) {
-      // Cleanup recognition when modal closes
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
-      setIsListening(false);
-    }
-    
-    return () => {
-      // Cleanup on unmount or when dependencies change
       if (recognitionRef.current) {
         recognitionRef.current.stop();
         recognitionRef.current = null;
       }
-      setIsListening(false);
     };
-  }, [isVoiceModalOpen, voiceEnabled]);
+  }, [step, voiceEnabled]);
+
+  useEffect(() => {
+    if (isVoiceModalOpen && voiceEnabled && !systemSpeaking) {
+      if (!recognitionRef.current) {
+        recognitionRef.current = startRecognition(handleVoiceResult);
+      }
+      
+      const timeoutId = setTimeout(() => {
+        if (recognitionRef.current && !systemSpeaking) {
+          recognitionRef.current.start();
+          setIsListening(true);
+        }
+      }, 1000);
+
+      return () => {
+        clearTimeout(timeoutId);
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          setIsListening(false);
+        }
+      };
+    }
+  }, [isVoiceModalOpen, voiceEnabled, systemSpeaking]);
 
   const startSurgery = (surgery) => {
     setSelectedSurgery(surgery);
@@ -151,15 +145,27 @@ export default function HomePage() {
     setStep("counting");
     setVoiceEnabled(true);
     setCountingPhase("instructions");
+    setCurrentItemIndex(0);
+    setCurrentInstruction("");
     if (speakEnabled) {
+      setSystemSpeaking(true);
       speak("Iniciando conteo inicial de instrumentos. Responda presente, falta, o necesito más para cada instrumento.")
         .then(() => {
           setSystemSpeaking(false);
           setCountingPhase("counting");
-          setCurrentInstruction(`¿El instrumento "${checklist[0].name}" está presente?`);
-          setIsVoiceModalOpen(true);
+          setCurrentInstruction(`¿El instrumento \"${INITIAL_CHECKLIST[0].name}\" está presente?`);
+          startListeningAfterDelay();
         });
     }
+  };
+
+  const startListeningAfterDelay = () => {
+    setTimeout(() => {
+      if (!systemSpeaking && recognitionRef.current) {
+        recognitionRef.current.start();
+        setIsListening(true);
+      }
+    }, 1000);
   };
 
   const confirmCount = () => {
@@ -217,6 +223,12 @@ export default function HomePage() {
         responseMessage = "Se necesitan más unidades, registrado.";
       }
 
+      // Detenemos el reconocimiento actual
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+        recognitionRef.current = null;
+      }
+
       if (status) {
         const newList = [...checklist];
         newList[currentItemIndex].status = status;
@@ -226,10 +238,7 @@ export default function HomePage() {
         speak(responseMessage).then(() => {
           setSystemSpeaking(false);
           if (currentItemIndex < checklist.length - 1) {
-            setCurrentItemIndex(prev => prev + 1);
-            setCurrentInstruction(`¿El instrumento "${checklist[currentItemIndex + 1].name}" está presente?`);
-            // Reopen modal for next item
-            setIsVoiceModalOpen(true);
+            moveToNextItem();
           } else {
             setCountingPhase("review");
             speak("Conteo inicial completado. Todos los instrumentos han sido verificados. Puede confirmar el conteo cuando esté listo.").then(() => {
@@ -242,11 +251,49 @@ export default function HomePage() {
         setSystemSpeaking(true);
         speak("No he entendido la respuesta. Por favor, diga presente, falta, o necesito más.").then(() => {
           setSystemSpeaking(false);
-          // Reopen modal to try again
-          setIsVoiceModalOpen(true);
+          // Reiniciamos el reconocimiento para el mismo elemento
+          setTimeout(() => {
+            recognitionRef.current = startRecognition(handleVoiceResult);
+            if (recognitionRef.current) {
+              recognitionRef.current.start();
+              setIsListening(true);
+              console.log('Reiniciando reconocimiento para el mismo elemento');
+            }
+          }, 500);
         });
       }
     }
+  };
+
+  const moveToNextItem = () => {
+    const nextIndex = currentItemIndex + 1;
+    const nextItem = checklist[nextIndex];
+    
+    // Primero actualizamos los estados
+    setCurrentItemIndex(nextIndex);
+    setCurrentInstruction(`¿El instrumento \"${nextItem.name}\" está presente?`);
+    
+    setSystemSpeaking(true);
+    speak(`Siguiente elemento: ${nextItem.name}. Indique si está presente, falta o necesita más.`)
+      .then(() => {
+        setSystemSpeaking(false);
+        
+        // Detenemos el reconocimiento actual si existe
+        if (recognitionRef.current) {
+          recognitionRef.current.stop();
+          recognitionRef.current = null;
+        }
+        
+        // Iniciamos un nuevo reconocimiento después de un breve delay
+        setTimeout(() => {
+          recognitionRef.current = startRecognition(handleVoiceResult);
+          if (recognitionRef.current) {
+            recognitionRef.current.start();
+            setIsListening(true);
+            console.log('Iniciando nuevo reconocimiento para siguiente elemento');
+          }
+        }, 500);
+      });
   };
 
   const toggleVoiceRecognition = () => {
@@ -341,7 +388,7 @@ export default function HomePage() {
             <div className="flex gap-2 items-center">
               <div className={`px-3 py-1 rounded-full text-sm flex items-center gap-2 ${voiceEnabled ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
                 <div className={`w-2 h-2 rounded-full ${voiceEnabled ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
-                Reconocimiento de Voz Activo
+                Reconocimiento de Voz {voiceEnabled ? 'Activo' : 'Inactivo'}
               </div>
               <button
                 onClick={() => setSpeakEnabled(!speakEnabled)}
@@ -356,34 +403,10 @@ export default function HomePage() {
             <div className="mb-4 p-4 rounded-lg bg-gray-50 border">
               <div className="flex items-center gap-2 mb-2">
                 <MessageSquare size={20} className="text-gray-600" />
-                <span className="font-medium">Último texto reconocido:</span>
+                <span className="font-medium">Estado actual:</span>
               </div>
-              <p className="text-gray-700">{lastRecognizedText || "Ningún texto reconocido aún"}</p>
-            </div>
-          )}
-
-          {isVoiceModalOpen && (
-            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-              <div className="bg-white rounded-xl p-6 max-w-md w-full mx-4">
-                <h3 className="text-xl font-medium mb-4">Reconocimiento de Voz</h3>
-                <p className="mb-4">{currentInstruction}</p>
-                <div className="flex items-center justify-center gap-4">
-                  <div className="animate-pulse">
-                    <Mic size={48} className="text-blue-600" />
-                  </div>
-                  <p className="text-gray-600">Escuchando...</p>
-                </div>
-                <div className="mt-4 text-center text-sm text-gray-500">
-                  Diga "presente", "falta" o "necesito más"
-                </div>
-              </div>
-            </div>
-          )}
-
-          {isListening && voiceEnabled && !systemSpeaking && (
-            <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-full flex items-center gap-2 animate-pulse shadow-lg">
-              <Mic size={20} />
-              <span>Escuchando... Hable ahora</span>
+              <p className="text-gray-700 mb-2">{currentInstruction}</p>
+              <p className="text-sm text-gray-600">Último texto reconocido: {lastRecognizedText || "Ningún texto reconocido aún"}</p>
             </div>
           )}
 
@@ -391,6 +414,13 @@ export default function HomePage() {
             <div className="fixed bottom-4 right-4 bg-blue-500 text-white px-4 py-2 rounded-full flex items-center gap-2 shadow-lg">
               <Volume2 size={20} />
               <span>Sistema hablando... espere por favor</span>
+            </div>
+          )}
+
+          {isListening && voiceEnabled && !systemSpeaking && (
+            <div className="fixed bottom-4 right-4 bg-green-500 text-white px-4 py-2 rounded-full flex items-center gap-2 animate-pulse shadow-lg">
+              <Mic size={20} />
+              <span>Escuchando... Hable ahora</span>
             </div>
           )}
 
