@@ -75,6 +75,7 @@ export default function HomePage() {
   const [currentInstruction, setCurrentInstruction] = useState("");
   const recognitionRef = useRef(null);
   const speakTimeoutRef = useRef(null);
+  const currentIndexRef = useRef(0); // Agregamos una referencia para el índice actual
 
   useEffect(() => {
     let interval;
@@ -146,6 +147,7 @@ export default function HomePage() {
     setVoiceEnabled(true);
     setCountingPhase("instructions");
     setCurrentItemIndex(0);
+    currentIndexRef.current = 0; // Inicializamos también la referencia
     setCurrentInstruction("");
     if (speakEnabled) {
       setSystemSpeaking(true);
@@ -206,6 +208,8 @@ export default function HomePage() {
 
   const handleVoiceResult = (transcript) => {
     if (step === "counting") {
+      const currentIndex = currentIndexRef.current; // Usamos la referencia
+      console.log('Procesando respuesta:', transcript, 'para el índice:', currentIndex);
       setLastRecognizedText(transcript);
       setIsListening(false);
       
@@ -230,16 +234,25 @@ export default function HomePage() {
       }
 
       if (status) {
-        const newList = [...checklist];
-        newList[currentItemIndex].status = status;
-        setChecklist(newList);
+        console.log('Actualizando estado del item:', currentIndex, 'a:', status);
+        
+        setChecklist(prevList => {
+          const newList = [...prevList];
+          newList[currentIndex] = {
+            ...newList[currentIndex],
+            status: status
+          };
+          return newList;
+        });
         
         setSystemSpeaking(true);
         speak(responseMessage).then(() => {
           setSystemSpeaking(false);
-          if (currentItemIndex < checklist.length - 1) {
+          if (currentIndex < checklist.length - 1) {
+            console.log('Moviendo al siguiente elemento desde el índice:', currentIndex);
             moveToNextItem();
           } else {
+            console.log('Finalizando conteo desde el índice:', currentIndex);
             setCountingPhase("review");
             speak("Conteo inicial completado. Todos los instrumentos han sido verificados. Puede confirmar el conteo cuando esté listo.").then(() => {
               setSystemSpeaking(false);
@@ -251,13 +264,12 @@ export default function HomePage() {
         setSystemSpeaking(true);
         speak("No he entendido la respuesta. Por favor, diga presente, falta, o necesito más.").then(() => {
           setSystemSpeaking(false);
-          // Reiniciamos el reconocimiento para el mismo elemento
           setTimeout(() => {
             recognitionRef.current = startRecognition(handleVoiceResult);
             if (recognitionRef.current) {
               recognitionRef.current.start();
               setIsListening(true);
-              console.log('Reiniciando reconocimiento para el mismo elemento');
+              console.log('Reiniciando reconocimiento para el mismo elemento en el índice:', currentIndex);
             }
           }, 500);
         });
@@ -266,34 +278,39 @@ export default function HomePage() {
   };
 
   const moveToNextItem = () => {
-    const nextIndex = currentItemIndex + 1;
+    const currentIndex = currentIndexRef.current;
+    const nextIndex = currentIndex + 1;
     const nextItem = checklist[nextIndex];
     
-    // Primero actualizamos los estados
+    console.log('Iniciando moveToNextItem, índice actual:', currentIndex, 'siguiente índice:', nextIndex);
+    console.log('Moviendo al elemento:', nextItem.name, 'índice:', nextIndex);
+    
+    // Actualizamos tanto el estado como la referencia
     setCurrentItemIndex(nextIndex);
+    currentIndexRef.current = nextIndex;
     setCurrentInstruction(`¿El instrumento \"${nextItem.name}\" está presente?`);
     
-    setSystemSpeaking(true);
-    speak(`Siguiente elemento: ${nextItem.name}. Indique si está presente, falta o necesita más.`)
-      .then(() => {
-        setSystemSpeaking(false);
-        
-        // Detenemos el reconocimiento actual si existe
-        if (recognitionRef.current) {
-          recognitionRef.current.stop();
-          recognitionRef.current = null;
-        }
-        
-        // Iniciamos un nuevo reconocimiento después de un breve delay
-        setTimeout(() => {
-          recognitionRef.current = startRecognition(handleVoiceResult);
-          if (recognitionRef.current) {
-            recognitionRef.current.start();
-            setIsListening(true);
-            console.log('Iniciando nuevo reconocimiento para siguiente elemento');
-          }
-        }, 500);
-      });
+    // Detenemos el reconocimiento actual si existe
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+
+    setTimeout(() => {
+      setSystemSpeaking(true);
+      speak(`Siguiente elemento: ${nextItem.name}.`)
+        .then(() => {
+          setSystemSpeaking(false);
+          setTimeout(() => {
+            console.log('Iniciando nuevo reconocimiento para:', nextItem.name, 'en el índice:', nextIndex);
+            recognitionRef.current = startRecognition(handleVoiceResult);
+            if (recognitionRef.current) {
+              recognitionRef.current.start();
+              setIsListening(true);
+            }
+          }, 500);
+        });
+    }, 100);
   };
 
   const toggleVoiceRecognition = () => {
